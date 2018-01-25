@@ -3,6 +3,7 @@
 
 
 #include <stdint.h>
+#include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
 #include <stdio.h>
@@ -70,22 +71,38 @@ int main(int argc, char **argv) {
     while (loop) {
         char line[1024];
         printf(">> ");
-        fgets(line, 1024, stdin);
+        for (size_t i = 0; i < 1024; i++) {
+            int c = fgetc(stdin);
+            if (c == EOF) break;
+            if (c == '\n') {
+                line[i]     = '\0';
+                break;
+            } else {
+                line[i]     = c;
+            }
+        }
 
         char *saved = NULL;
         char *seq = strtok_r(line, ";", &saved);
 
+        struct sockaddr_in peer;
+        int has_peer = 0;
+
         while (seq) {
             while (*seq == ' ')  ++seq;     // skip space
-            printf("seq: %s\n", seq);
+            seq[strlen(seq)] = '\0';        // may have \n at the end
+            //printf("seq: %s\n", seq);
 
             if (!memcmp(seq, "recv", 4)) {
+                int timeout;
+                sscanf(seq, "recv %d", &timeout);
+
                 fd_set mask;
                 FD_ZERO(&mask);
                 FD_SET(sockFd, &mask);
 
                 struct timeval tv;
-                tv.tv_sec   = 10;
+                tv.tv_sec   = timeout;
                 tv.tv_usec  = 0;
                 if (select(sockFd + 1, &mask, NULL, NULL, &tv) > 0) {
                     if (FD_ISSET(sockFd, &mask)) {
@@ -100,9 +117,14 @@ int main(int argc, char **argv) {
                                 ip[0], ip[1], ip[2], ip[3], 
                                 sender.sin_port);
 
+                        memcpy(&peer, &sender, sizeof(sender));
+                        has_peer = 1;
+
                     } else {
                         printf("something is wrong\n");
                     }
+                } else {
+                    printf("timeout...\n");
                 }
             } else if (!memcmp(seq, "send", 4)) {
                 struct sockaddr_in dest;
@@ -123,7 +145,26 @@ int main(int argc, char **argv) {
                 memcpy(&dest.sin_addr, ip, 4);
 
                 send_udp_to(sockFd, &dest, pkt, strlen((const char *)pkt) + 1);
+            } else if (!memcmp(seq, "ack", 3)) {
 
+                if (has_peer) {
+                    uint8_t *pkt = (uint8_t*)seq + 3;
+                    while (*pkt == ' ') ++pkt;  // skip space
+
+                    uint8_t *ip = (uint8_t*)&peer.sin_addr;
+                    printf("ack %s => %d.%d.%d.%d:%d\n", pkt, 
+                            ip[0], ip[1], ip[2], ip[3],
+                            peer.sin_port);
+
+                    send_udp_to(sockFd, &peer, pkt, strlen((const char*)pkt) + 1);
+                } else {
+                    printf("no peer exists\n");
+                }
+            } else if (!memcmp(seq, "wait", 4)) {
+                int seconds;
+                sscanf(seq, "wait %d", &seconds);
+                printf("wait %d seconds\n", seconds);
+                usleep(seconds * 1000000LL);
             } else if (!memcmp(seq, "quit", 4) ||
                     !memcmp(seq, "exit", 4)) {
                 printf("exiting...\n");
@@ -132,9 +173,11 @@ int main(int argc, char **argv) {
             } else {
                 printf("unknown command %s\n", seq);
                 printf("Usage: \n");
-                printf("\trecv              - recv from peer\n");
-                printf("\tsend              - send to peer\n");
-                printf("\texit|quit         - exit the program\n");
+                printf("\trecv n                - recv from peer, timeout: n seconds\n");
+                printf("\tsend ip:port payload  - send to peer\n");
+                printf("\tack payload           - ack to peer\n");
+                printf("\twait timeout          - wait for n seconds\n");
+                printf("\texit|quit             - exit the program\n");
                 break;
             }
             seq = strtok_r(NULL, ";", &saved);
