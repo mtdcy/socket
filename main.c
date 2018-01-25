@@ -68,6 +68,9 @@ int main(int argc, char **argv) {
     
     int loop = 1;
 
+    struct sockaddr_in peer;
+    int has_peer = 0;
+
     while (loop) {
         char line[1024];
         printf(">> ");
@@ -84,9 +87,6 @@ int main(int argc, char **argv) {
 
         char *saved = NULL;
         char *seq = strtok_r(line, ";", &saved);
-
-        struct sockaddr_in peer;
-        int has_peer = 0;
 
         while (seq) {
             while (*seq == ' ')  ++seq;     // skip space
@@ -115,7 +115,7 @@ int main(int argc, char **argv) {
                         uint8_t *ip = (uint8_t*)&sender.sin_addr;
                         printf("recv %s <= %d.%d.%d.%d:%d\n", (char*)pkt, 
                                 ip[0], ip[1], ip[2], ip[3], 
-                                sender.sin_port);
+                                ntohs(sender.sin_port));
 
                         memcpy(&peer, &sender, sizeof(sender));
                         has_peer = 1;
@@ -142,7 +142,7 @@ int main(int argc, char **argv) {
 
                 dest.sin_family         = AF_INET;
                 dest.sin_port           = htons(port);
-                memcpy(&dest.sin_addr, ip, 4);
+                memcpy(&dest.sin_addr, &ip[0], 4);
 
                 send_udp_to(sockFd, &dest, pkt, strlen((const char *)pkt) + 1);
             } else if (!memcmp(seq, "ack", 3)) {
@@ -154,7 +154,7 @@ int main(int argc, char **argv) {
                     uint8_t *ip = (uint8_t*)&peer.sin_addr;
                     printf("ack %s => %d.%d.%d.%d:%d\n", pkt, 
                             ip[0], ip[1], ip[2], ip[3],
-                            peer.sin_port);
+                            ntohs(peer.sin_port));
 
                     send_udp_to(sockFd, &peer, pkt, strlen((const char*)pkt) + 1);
                 } else {
