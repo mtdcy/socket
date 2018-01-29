@@ -65,7 +65,7 @@ int main(int argc, char **argv) {
     int localport = atoi(argv[1]);
     int sockFd = create_udp_socket(localport);
     if (sockFd < 0) return -1;
-    
+
     int loop = 1;
 
     struct sockaddr_in peer;
